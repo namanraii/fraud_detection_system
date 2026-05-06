@@ -78,9 +78,16 @@
                                 <button type="submit" class="btn btn-primary btn-lg">
                                     <i class="bi bi-search"></i> Predict Fraud
                                 </button>
-                                <button type="button" class="btn btn-outline-secondary" id="fillSampleBtn">
-                                    <i class="bi bi-file-earmark-fill"></i> Fill Sample Data
-                                </button>
+                                <div class="dropdown d-grid">
+                                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="fillSampleDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="bi bi-file-earmark-fill"></i> Fill Sample Data
+                                    </button>
+                                    <ul class="dropdown-menu w-100 text-center" aria-labelledby="fillSampleDropdown">
+                                        <li><a class="dropdown-item text-success" href="#" onclick="fillSampleData('legit'); return false;">Legitimate Transaction</a></li>
+                                        <li><a class="dropdown-item text-danger" href="#" onclick="fillSampleData('fraud1'); return false;">Fraudulent Transaction 1</a></li>
+                                        <li><a class="dropdown-item text-danger" href="#" onclick="fillSampleData('fraud2'); return false;">Fraudulent Transaction 2</a></li>
+                                    </ul>
+                                </div>
                             </div>
                         </form>
                     </div>

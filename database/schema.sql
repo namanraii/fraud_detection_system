@@ -19,34 +19,34 @@ USE fraud_db;
 CREATE TABLE raw_transactions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     Time INT NOT NULL COMMENT 'Seconds elapsed between this transaction and first transaction',
-    V1 DECIMAL(10,6) COMMENT 'PCA component 1',
-    V2 DECIMAL(10,6) COMMENT 'PCA component 2',
-    V3 DECIMAL(10,6) COMMENT 'PCA component 3',
-    V4 DECIMAL(10,6) COMMENT 'PCA component 4',
-    V5 DECIMAL(10,6) COMMENT 'PCA component 5',
-    V6 DECIMAL(10,6) COMMENT 'PCA component 6',
-    V7 DECIMAL(10,6) COMMENT 'PCA component 7',
-    V8 DECIMAL(10,6) COMMENT 'PCA component 8',
-    V9 DECIMAL(10,6) COMMENT 'PCA component 9',
-    V10 DECIMAL(10,6) COMMENT 'PCA component 10',
-    V11 DECIMAL(10,6) COMMENT 'PCA component 11',
-    V12 DECIMAL(10,6) COMMENT 'PCA component 12',
-    V13 DECIMAL(10,6) COMMENT 'PCA component 13',
-    V14 DECIMAL(10,6) COMMENT 'PCA component 14',
-    V15 DECIMAL(10,6) COMMENT 'PCA component 15',
-    V16 DECIMAL(10,6) COMMENT 'PCA component 16',
-    V17 DECIMAL(10,6) COMMENT 'PCA component 17',
-    V18 DECIMAL(10,6) COMMENT 'PCA component 18',
-    V19 DECIMAL(10,6) COMMENT 'PCA component 19',
-    V20 DECIMAL(10,6) COMMENT 'PCA component 20',
-    V21 DECIMAL(10,6) COMMENT 'PCA component 21',
-    V22 DECIMAL(10,6) COMMENT 'PCA component 22',
-    V23 DECIMAL(10,6) COMMENT 'PCA component 23',
-    V24 DECIMAL(10,6) COMMENT 'PCA component 24',
-    V25 DECIMAL(10,6) COMMENT 'PCA component 25',
-    V26 DECIMAL(10,6) COMMENT 'PCA component 26',
-    V27 DECIMAL(10,6) COMMENT 'PCA component 27',
-    V28 DECIMAL(10,6) COMMENT 'PCA component 28',
+    V1 DOUBLE COMMENT 'PCA component 1',
+    V2 DOUBLE COMMENT 'PCA component 2',
+    V3 DOUBLE COMMENT 'PCA component 3',
+    V4 DOUBLE COMMENT 'PCA component 4',
+    V5 DOUBLE COMMENT 'PCA component 5',
+    V6 DOUBLE COMMENT 'PCA component 6',
+    V7 DOUBLE COMMENT 'PCA component 7',
+    V8 DOUBLE COMMENT 'PCA component 8',
+    V9 DOUBLE COMMENT 'PCA component 9',
+    V10 DOUBLE COMMENT 'PCA component 10',
+    V11 DOUBLE COMMENT 'PCA component 11',
+    V12 DOUBLE COMMENT 'PCA component 12',
+    V13 DOUBLE COMMENT 'PCA component 13',
+    V14 DOUBLE COMMENT 'PCA component 14',
+    V15 DOUBLE COMMENT 'PCA component 15',
+    V16 DOUBLE COMMENT 'PCA component 16',
+    V17 DOUBLE COMMENT 'PCA component 17',
+    V18 DOUBLE COMMENT 'PCA component 18',
+    V19 DOUBLE COMMENT 'PCA component 19',
+    V20 DOUBLE COMMENT 'PCA component 20',
+    V21 DOUBLE COMMENT 'PCA component 21',
+    V22 DOUBLE COMMENT 'PCA component 22',
+    V23 DOUBLE COMMENT 'PCA component 23',
+    V24 DOUBLE COMMENT 'PCA component 24',
+    V25 DOUBLE COMMENT 'PCA component 25',
+    V26 DOUBLE COMMENT 'PCA component 26',
+    V27 DOUBLE COMMENT 'PCA component 27',
+    V28 DOUBLE COMMENT 'PCA component 28',
     Amount DECIMAL(10,2) NOT NULL COMMENT 'Transaction amount',
     Class TINYINT NOT NULL COMMENT '1 = Fraud, 0 = Legitimate',
     imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Import timestamp'
@@ -67,7 +67,7 @@ CREATE TABLE CUSTOMER (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     total_transactions INT DEFAULT 0 COMMENT 'Cached transaction count',
     total_fraud_count INT DEFAULT 0 COMMENT 'Cached fraud count',
-    risk_score DECIMAL(5,4) DEFAULT 0.0000 COMMENT 'Calculated risk score (0-1)',
+    risk_score DOUBLE DEFAULT 0.0000 COMMENT 'Calculated risk score (0-1)',
     last_transaction_time INT COMMENT 'Last transaction time in seconds',
     INDEX idx_risk_score (risk_score),
     INDEX idx_last_transaction (last_transaction_time)
@@ -100,7 +100,7 @@ CREATE TABLE TRANSACTION_FEATURES (
     feature_id BIGINT AUTO_INCREMENT PRIMARY KEY,
     transaction_id INT NOT NULL,
     feature_name VARCHAR(10) NOT NULL COMMENT 'V1 through V28',
-    feature_value DECIMAL(10,6) NOT NULL,
+    feature_value DOUBLE NOT NULL,
     FOREIGN KEY (transaction_id) REFERENCES TRANSACTION(transaction_id) ON DELETE CASCADE,
     INDEX idx_transaction_feature (transaction_id, feature_name),
     UNIQUE KEY uk_transaction_feature (transaction_id, feature_name)
@@ -146,7 +146,7 @@ CREATE TABLE MODEL_METADATA (
 
 CREATE TABLE ML_PREDICTION (
     prediction_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    transaction_id INT NOT NULL,
+    transaction_id INT NULL,
     model_id INT NOT NULL,
     predicted_class BOOLEAN NOT NULL COMMENT 'TRUE = Fraud, FALSE = Legitimate',
     probability_score DECIMAL(5,4) NOT NULL COMMENT 'Fraud probability (0-1)',
@@ -160,10 +160,68 @@ CREATE TABLE ML_PREDICTION (
     INDEX idx_predicted_at (predicted_at)
 ) ENGINE=InnoDB COMMENT='ML model predictions';
 
+-- ----------------------------------------------------------------------------
+-- TRANSACTION_ARCHIVE Table
+-- Purpose: Store old transactions moved by the archiving stored procedure
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE TRANSACTION_ARCHIVE (
+    transaction_id INT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    time INT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMP,
+    archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_archive_customer_time (customer_id, time),
+    INDEX idx_archive_time (time)
+) ENGINE=InnoDB COMMENT='Archive for old transaction records';
+
+-- ----------------------------------------------------------------------------
+-- 4NF DEMONSTRATION TABLES (Multivalued Dependencies)
+-- Purpose: Decomposed from hypothetical CUSTOMER_INFO(cust, card, branch)
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE CUSTOMER_CARD (
+    customer_id INT,
+    credit_card_number VARCHAR(20),
+    PRIMARY KEY (customer_id, credit_card_number),
+    FOREIGN KEY (customer_id) REFERENCES CUSTOMER(customer_id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='4NF: Independent Multivalued Attribute';
+
+CREATE TABLE CUSTOMER_BRANCH (
+    customer_id INT,
+    branch_name VARCHAR(50),
+    PRIMARY KEY (customer_id, branch_name),
+    FOREIGN KEY (customer_id) REFERENCES CUSTOMER(customer_id) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='4NF: Independent Multivalued Attribute';
+
+-- ----------------------------------------------------------------------------
+-- 5NF DEMONSTRATION TABLES (Join Dependencies)
+-- Purpose: Decomposed from ternary INVESTIGATION(investigator, branch, category)
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE INVESTIGATOR_BRANCH (
+    investigator_name VARCHAR(50),
+    branch_name VARCHAR(50),
+    PRIMARY KEY (investigator_name, branch_name)
+) ENGINE=InnoDB COMMENT='5NF: Pairwise relationship 1';
+
+CREATE TABLE BRANCH_FRAUD (
+    branch_name VARCHAR(50),
+    fraud_category VARCHAR(50),
+    PRIMARY KEY (branch_name, fraud_category)
+) ENGINE=InnoDB COMMENT='5NF: Pairwise relationship 2';
+
+CREATE TABLE INVESTIGATOR_FRAUD (
+    investigator_name VARCHAR(50),
+    fraud_category VARCHAR(50),
+    PRIMARY KEY (investigator_name, fraud_category)
+) ENGINE=InnoDB COMMENT='5NF: Pairwise relationship 3';
+
 -- ============================================================================
 -- SUMMARY
 -- ============================================================================
--- Tables created: 7
+-- Tables created: 13
 -- 1. raw_transactions (staging)
 -- 2. CUSTOMER (dimension)
 -- 3. TRANSACTION (fact)
@@ -171,4 +229,10 @@ CREATE TABLE ML_PREDICTION (
 -- 5. FRAUD_LABEL (labels)
 -- 6. MODEL_METADATA (model versioning)
 -- 7. ML_PREDICTION (predictions)
+-- 8. TRANSACTION_ARCHIVE (archive)
+-- 9. CUSTOMER_CARD (4NF)
+-- 10. CUSTOMER_BRANCH (4NF)
+-- 11. INVESTIGATOR_BRANCH (5NF)
+-- 12. BRANCH_FRAUD (5NF)
+-- 13. INVESTIGATOR_FRAUD (5NF)
 -- ============================================================================

@@ -6,10 +6,11 @@
 
 | Metric | Value |
 |--------|-------|
-| **Total Files Created** | 30+ |
-| **Lines of Code** | ~5,000+ |
-| **Database Tables** | 7 (3NF normalized) |
-| **SQL Views** | 6 analytical views |
+| **Total Files Created** | 33+ |
+| **Lines of Code** | ~6,500+ |
+| **Database Tables** | 8 (3NF normalized + audit_log) |
+| **SQL Views** | 11 analytical & complex views |
+| **DBMS SQL Task Files** | 3 (DML/Constraints, Joins/Views, Functions/Triggers) |
 | **ML Models** | 2 (Logistic Regression, Random Forest) |
 | **API Endpoints** | 4 REST endpoints |
 | **Frontend Pages** | 2 (Prediction, Dashboard) |
@@ -29,6 +30,16 @@
 - `database/indexes.sql`
 - `database/views.sql` (300+ lines)
 - `database/sample_queries.sql`
+
+#### 1b. DBMS Project Tasks (SQL) ✓
+- [x] **Task 1** — `01_dml_constraints_sets.sql`: DML (INSERT / UPDATE / DELETE / UPSERT), all constraint types (PK, FK, UNIQUE, NOT NULL, CHECK, DEFAULT), Set Operations (UNION, UNION ALL, INTERSECT, EXCEPT simulation), and Aggregate Functions (GROUP BY / HAVING)
+- [x] **Task 2** — `02_subqueries_joins_views.sql`: Scalar / Row / Table / Correlated subqueries, EXISTS / NOT EXISTS / IN / NOT IN, all JOIN types (INNER, LEFT, RIGHT, CROSS, SELF, multi-table), 5 Views (simple, complex, updatable, nested, statistical)
+- [x] **Task 3** — `03_functions_triggers_cursors_exceptions.sql`: 3 Scalar Functions, 4 Triggers (BEFORE INSERT, AFTER INSERT, AFTER UPDATE, BEFORE DELETE), 2 Cursor-driven Stored Procedures with FETCH loops, DECLARE HANDLER (CONTINUE & EXIT), SIGNAL SQLSTATE for custom exceptions
+
+**Files**:
+- `database/01_dml_constraints_sets.sql`  (~240 lines)
+- `database/02_subqueries_joins_views.sql` (~320 lines)
+- `database/03_functions_triggers_cursors_exceptions.sql` (~380 lines)
 
 #### 2. ETL Pipeline ✓
 - [x] CSV import with validation and batch processing
@@ -142,7 +153,11 @@ fraud_detection_system/
 │   ├── schema.sql
 │   ├── indexes.sql
 │   ├── views.sql
-│   └── sample_queries.sql
+│   ├── advanced_objects.sql
+│   ├── sample_queries.sql
+│   ├── 01_dml_constraints_sets.sql          ← DBMS Task 1
+│   ├── 02_subqueries_joins_views.sql         ← DBMS Task 2
+│   └── 03_functions_triggers_cursors_exceptions.sql  ← DBMS Task 3
 ├── etl/
 │   ├── config.py
 │   ├── import_csv.py
@@ -196,6 +211,12 @@ fraud_detection_system/
 mysql -u root -p < database/schema.sql
 mysql -u root -p < database/indexes.sql
 mysql -u root -p < database/views.sql
+mysql -u root -p < database/advanced_objects.sql
+
+# 1b. Load DBMS project task files (run in order)
+mysql -u root -p fraud_db < database/01_dml_constraints_sets.sql
+mysql -u root -p fraud_db < database/02_subqueries_joins_views.sql
+mysql -u root -p fraud_db < database/03_functions_triggers_cursors_exceptions.sql
 
 # 2. Install dependencies
 pip install -r requirements.txt
@@ -225,7 +246,9 @@ python backend/app.py
 
 This project demonstrates:
 - **Database Design**: 3NF normalization, indexing strategies
-- **SQL Proficiency**: Complex queries, views, joins, aggregations
+- **SQL Proficiency (Task 1)**: ALL DML statements, constraint types, UNION / INTERSECT / EXCEPT set operations
+- **SQL Proficiency (Task 2)**: Correlated & nested subqueries, all JOIN types, updatable & nested views
+- **SQL Proficiency (Task 3)**: Scalar functions, BEFORE/AFTER triggers, cursor-driven stored procedures, structured exception handling with SIGNAL / RESIGNAL
 - **ETL Development**: Data pipeline design and implementation
 - **Machine Learning**: Classification, imbalanced data handling
 - **Full-Stack Development**: Backend API + Frontend UI

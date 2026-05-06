@@ -1,0 +1,491 @@
+# CHAPTER 4: ANALYZING THE PITFALLS, IDENTIFYING THE DEPENDENCIES, AND APPLYING NORMALIZATIONS
+
+## 4.1 Analyse the Pitfalls in Relations
+In the initial stages of database design, if we simply aggregated all the Fraud Detection System data into a single, unnormalized relation (e.g., `RAW_DATA_DUMP`), it would contain attributes like: `transaction_id`, `time`, `amount`, `customer_id`, `risk_score`, `model_id`, `model_name`, `is_fraud`. This flat structure leads to three major database pitfalls (anomalies):
+1. **Insertion Anomaly**: We cannot record a new `CUSTOMER` and their `risk_score` in the database until they make a `TRANSACTION`, because `transaction_id` serves as the primary key.
+2. **Update Anomaly**: If a customer's `risk_score` changes, we would have to update thousands of duplicate rows (every transaction they ever made). A single missed row destroys data integrity.
+3. **Deletion Anomaly**: If a customer's only transaction is deleted (e.g., for data retention limits), all associated customer information (like `risk_score`) is inadvertently lost forever.
+
+## 4.2 First Normal Form (1NF)
+### 4.2.1: Identify Dependency
+1NF requires that all table attributes are atomic. In our original design, a transaction's PCA features (V1 through V28) could be stored as a comma-separated list `[1.34, -0.45, 0.11...]` in a single `pca_values` column. 
+**Dependency:** `transaction_id → pca_values (Multi-valued)`
+
+### 4.2.2: Apply Normalization to 1NF
+To reach 1NF, we split the multi-valued array into distinct, atomic rows where each combination of transaction and feature creates a unique scalar value.
+
+**Before Normalization (UNF):**
+| transaction_id | time | amount | pca_values |
+| :--- | :--- | :--- | :--- |
+| 1001 | 472 | 529.00 | "-3.04, 1.08, 2.28..." |
+
+**After Normalization (1NF):**
+| transaction_id | feature_name | feature_value |
+| :--- | :--- | :--- |
+| 1001 | V1 | -3.043540 |
+| 1001 | V2 | 1.088462 |
+*(This data moves into our `TRANSACTION_FEATURES` table, establishing atomicity).*
+
+## 4.3 Second Normal Form (2NF)
+### 4.3.1: Identify Dependency
+2NF requires the table to be in 1NF and have no partial dependencies (where a non-prime attribute depends dynamically on only a part of a composite primary key). 
+**Dependency:** In a hypothetical table mapping predictions, `(transaction_id, model_id) → model_name, predicted_class`. Here, `model_name` depends solely on `model_id`, not on `transaction_id`. This is a partial dependency.
+
+### 4.3.2: Apply Normalization to 2NF
+We remove `model_name` from the prediction table and move it to its own `MODEL_METADATA` table.
+
+**Before Normalization (1NF Table):**
+| transaction_id | model_id | model_name | predicted_class | 
+| :--- | :--- | :--- | :--- |
+| 1001 | 1 | RandomForest | 1 |
+| 1002 | 1 | RandomForest | 0 |
+
+**After Normalization (2NF Tables):**
+**`ML_PREDICTION` Table**
+| transaction_id | model_id | predicted_class |
+| :--- | :--- | :--- |
+| 1001 | 1 | 1 |
+| 1002 | 1 | 0 |
+
+**`MODEL_METADATA` Table**
+| model_id | model_name |
+| :--- | :--- |
+| 1 | RandomForest |
+
+## 4.4 Third Normal Form (3NF)
+### 4.4.1: Identify Dependency
+3NF requires 2NF and the removal of transitive dependencies (where a non-prime attribute depends on another non-prime attribute).
+**Dependency:** In the main transaction table: `transaction_id → customer_id` and `customer_id → risk_score`. Thus, `transaction_id → risk_score` is a transitive dependency.
+
+### 4.4.2: Apply Normalization to 3NF
+We abstract the customer data into its own dedicated relation.
+
+**Before Normalization (2NF Table):**
+| transaction_id | customer_id | amount | risk_score |
+| :--- | :--- | :--- | :--- |
+| 1001 | 55 | 529.00 | 0.85 |
+| 1002 | 55 | 12.50 | 0.85 |
+
+**After Normalization (3NF Tables):**
+**`TRANSACTION` Table**
+| transaction_id | customer_id | amount |
+| :--- | :--- | :--- |
+| 1001 | 55 | 529.00 |
+
+**`CUSTOMER` Table**
+| customer_id | risk_score |
+| :--- | :--- |
+| 55 | 0.85 |
+
+## 4.5 Boyce-Codd Normal Form (BCNF)
+### 4.5.1: Identify Dependency
+BCNF is a stricter version of 3NF where every determinant must be a candidate key.
+**Dependency:** In a scenario where a `fraud_investigator_id` determines the `review_queue`, but a `review_queue` can be shared by multiple investigators, if `investigator_id` is not a candidate key but still dictates the queue, BCNF is violated.
+In our core Fraud schema, all our determinants (`transaction_id`, `customer_id`, `model_id`) are true candidate keys. 
+
+### 4.5.2: Apply Normalization to BCNF
+Our schema, by design and via 3NF normalization, inherently aligns with BCNF since there are no non-trivial dependencies involving prime/non-prime attribute overlap.
+
+**Final BCNF Model Evidence:**
+| table_name | Candidate Key | Dependent Attributes |
+| :--- | :--- | :--- |
+| TRANSACTION | `transaction_id` | `customer_id`, `time`, `amount` |
+| FRAUD_LABEL | `transaction_id` | `is_fraud` |
+
+## 4.6 Fourth Normal Form (4NF)
+### 4.6.1: Identify Dependency
+4NF focuses on eliminating Multivalued Dependencies (MVDs) where one entity implies multiple independent values. 
+**Dependency:** In our Fraud system, a customer can have multiple registered credit cards, and they can visit multiple bank branches. `customer_id ↠ credit_card_number` and `customer_id ↠ branch_name`. Storing both in a single overarching "Customer Info" table creates massive redundancy because cards and branches are independent of each other.
+
+### 4.6.2: Apply Normalization to 4NF
+To reach 4NF, we broke this multi-valued dependency into two independent parent-child tables in our schema: `CUSTOMER_CARD` and `CUSTOMER_BRANCH`.
+
+**Before Normalization (BCNF Table):**
+| customer_id | credit_card_number | branch_name |
+| :--- | :--- | :--- |
+| 55 | 1111-2222-3333-4444 | Downtown Branch |
+| 55 | 5555-6666-7777-8888 | Downtown Branch |
+| 55 | 1111-2222-3333-4444 | Midtown Branch |
+| 55 | 5555-6666-7777-8888 | Midtown Branch |
+
+**After Normalization (4NF Tables):**
+**`CUSTOMER_CARD`**
+| customer_id | credit_card_number |
+| :--- | :--- |
+| 55 | 1111-2222-3333-4444 |
+| 55 | 5555-6666-7777-8888 |
+
+**`CUSTOMER_BRANCH`**
+| customer_id | branch_name |
+| :--- | :--- |
+| 55 | Downtown Branch |
+| 55 | Midtown Branch |
+
+## 4.7 Fifth Normal Form (5NF)
+### 4.7.1: Identify Dependency
+5NF addresses Join Dependencies. If a table can be decomposed into three smaller tables and recreated exactly using JOINs without generating fake (spurious) rows, it must be split.
+**Dependency:** In fraud investigations, we track `(investigator_name, branch_name, fraud_category)`. 
+- Investigators are assigned to Branches.
+- Branches experience specific Fraud Categories.
+- Investigators are trained in specific Fraud Categories.
+If John works at Downtown Branch, and Downtown sees Identity Theft, and John is trained in Identity Theft, then the tuple `(John, Downtown, Identity Theft)` must strictly exist. This is a Join Dependency.
+
+### 4.7.2: Apply Normalization to 5NF
+Instead of a massive single table mapping all three variables together, we decomposed it into pairwise tables in our schema: `INVESTIGATOR_BRANCH`, `BRANCH_FRAUD`, and `INVESTIGATOR_FRAUD`. This completely eliminates join anomalies.
+
+**Before Normalization (4NF Table):**
+| investigator_name | branch_name | fraud_category |
+| :--- | :--- | :--- |
+| John Doe | Downtown Branch | Identity Theft |
+
+**After Normalization (5NF Tables):**
+**`INVESTIGATOR_BRANCH`**
+| investigator_name | branch_name |
+| :--- | :--- |
+| John Doe | Downtown Branch |
+
+**`BRANCH_FRAUD`**
+| branch_name | fraud_category |
+| :--- | :--- |
+| Downtown Branch | Identity Theft |
+
+**`INVESTIGATOR_FRAUD`**
+| investigator_name | fraud_category |
+| :--- | :--- |
+| John Doe | Identity Theft |
+
+<br><br>
+
+# CHAPTER 5: IMPLEMENTATION OF CONCURRENCY CONTROL AND RECOVERY MECHANISMS
+
+## 5.1 Introduction to Transactions
+A transaction is a logical unit of processing in a DBMS which entails one or more database access operations. In a Fraud Detection System, transactions ensure that machine learning predictions and their associated raw data evaluate safely.
+### 5.1.1 Properties
+Transactions follow **ACID** properties:
+- **Atomicity**: The "all or nothing" principle.
+- **Consistency**: A transaction takes the database from one valid state to another.
+- **Isolation**: Concurrent transactions execute as if they are the only transaction in the system.
+- **Durability**: Committed data cannot be lost, even during system crashes.
+### 5.1.2 States
+A transaction flows through various states:
+`Active` → `Partially Committed` → `Committed` (or `Failed` → `Aborted`)
+
+## 5.2 Transaction Control Language (TCL)
+TCL commands control execution workflows:
+### 5.2.1 Save point
+`SAVEPOINT`: Sets a named marker within a transaction, allowing partial rollbacks.
+### 5.2.2 Commit
+`COMMIT`: Permanently saves all changes performed in the current transaction to the disk.
+### 5.2.3 Rollback
+`ROLLBACK`: Reverts all Uncommitted changes, returning the DB to its prior state.
+
+## 5.3 Create 5 transactions for your project and execute
+
+### 5.3.1 Transaction 1: Inserting a Transaction and its Label
+
+```sql
+-- Step 1: Start transaction by inserting a raw transaction record
+START TRANSACTION;
+INSERT INTO TRANSACTION (transaction_id, customer_id, time, amount) 
+VALUES (9901, 10, 500, 150.00);
+
+-- Step 2: Set a savepoint after the safe insertion
+SAVEPOINT after_transaction_insert;
+SELECT transaction_id, customer_id, amount FROM TRANSACTION WHERE transaction_id = 9901;
+```
+**Output 1: Transaction Inserted**
+| transaction_id | customer_id | amount |
+| :--- | :--- | :--- |
+| 9901 | 10 | 150.00 |
+
+```sql
+-- Step 3: Attempt to insert a feature associated with a different transaction ID by mistake
+INSERT INTO TRANSACTION_FEATURES (transaction_id, feature_name, feature_value) 
+VALUES (9902, 'V1', 1.05);
+
+-- Step 4: Oops! The transaction ID was wrong, rollback the erroneous feature insertion
+ROLLBACK TO after_transaction_insert;
+SELECT * FROM TRANSACTION_FEATURES WHERE transaction_id = 9902;
+```
+**Output 2: Rollback Reverts Feature Insert**
+*(Empty Set - 0 rows returned)*
+
+```sql
+-- Step 5: Continue with a safe insertion of the correct Fraud Label
+INSERT INTO FRAUD_LABEL (transaction_id, is_fraud) 
+VALUES (9901, 0);
+
+-- Step 6: Commit the initial transaction and the correct label
+COMMIT;
+SELECT transaction_id, is_fraud FROM FRAUD_LABEL WHERE transaction_id = 9901;
+```
+**Output 3: Final Committed Label**
+| transaction_id | is_fraud |
+| :--- | :--- |
+| 9901 | 0 |
+
+### 5.3.2 Transaction 2: Safely Updating Customer Risk Scoring
+
+```sql
+-- Step 1: Start transaction by updating a customer's risk score based on mild activity
+START TRANSACTION;
+UPDATE CUSTOMER SET risk_score = 0.50 WHERE customer_id = 10;
+
+-- Step 2: Set a savepoint denoting the mild risk update
+SAVEPOINT after_mild_risk;
+SELECT customer_id, risk_score FROM CUSTOMER WHERE customer_id = 10;
+```
+**Output 1: Intermediate Risk Update**
+| customer_id | risk_score |
+| :--- | :--- |
+| 10 | 0.50 |
+
+```sql
+-- Step 3: Reviewer flags an extreme potential fraud, escalating risk score to maximum
+UPDATE CUSTOMER SET risk_score = 0.99 WHERE customer_id = 10;
+SELECT customer_id, risk_score FROM CUSTOMER WHERE customer_id = 10;
+```
+**Output 2: Extreme Escalation Applied**
+| customer_id | risk_score |
+| :--- | :--- |
+| 10 | 0.99 |
+
+```sql
+-- Step 4: The escalation is rejected by an automated compliance check, rollback to mild risk
+ROLLBACK TO after_mild_risk;
+SELECT customer_id, risk_score FROM CUSTOMER WHERE customer_id = 10;
+```
+**Output 3: Rollback Restores Mild Risk**
+| customer_id | risk_score |
+| :--- | :--- |
+| 10 | 0.50 |
+
+```sql
+-- Step 5: Continue instead with a moderate and approved risk adjustment
+UPDATE CUSTOMER SET risk_score = 0.65 WHERE customer_id = 10;
+
+-- Step 6: Commit all legitimate changes since the savepoint
+COMMIT;
+SELECT customer_id, risk_score FROM CUSTOMER WHERE customer_id = 10;
+```
+**Output 4: Final Committed Risk Score**
+| customer_id | risk_score |
+| :--- | :--- |
+| 10 | 0.65 |
+
+### 5.3.3 Transaction 3: Processing Heavy ML Predictions
+
+```sql
+-- Step 1: Start transaction by inserting a new algorithmic prediction
+START TRANSACTION;
+INSERT INTO ML_PREDICTION (transaction_id, model_id, predicted_class, probability_score)
+VALUES (305, 1, 1, 0.98);
+
+-- Step 2: Set a savepoint after successfully logging the prediction
+SAVEPOINT pred_logged;
+SELECT transaction_id, probability_score FROM ML_PREDICTION WHERE transaction_id = 305;
+```
+**Output 1: Prediction Logged**
+| transaction_id | probability_score |
+| :--- | :--- |
+| 305 | 0.98 |
+
+```sql
+-- Step 3: Attempt an unauthorized modification to zero out the transaction amount
+UPDATE TRANSACTION SET amount = 0 WHERE transaction_id = 305; 
+SELECT transaction_id, amount FROM TRANSACTION WHERE transaction_id = 305;
+```
+**Output 2: Amount Dangerously Zeroed**
+| transaction_id | amount |
+| :--- | :--- |
+| 305 | 0.00 |
+
+```sql
+-- Step 4: System audit detects tampering with historical balances, rollback to safe prediction state
+ROLLBACK TO pred_logged;
+SELECT transaction_id, amount FROM TRANSACTION WHERE transaction_id = 305;
+```
+**Output 3: Transaction Amount Restored**
+| transaction_id | amount |
+| :--- | :--- |
+| 305 | 45.50 |
+
+```sql
+-- Step 5: Read just the probability score slightly based on a secondary model check
+UPDATE ML_PREDICTION SET probability_score = 0.95 WHERE transaction_id = 305;
+
+-- Step 6: Commit the final validated prediction
+COMMIT;
+```
+
+### 5.3.4 Transaction 4: Model Version Control Rollout
+
+```sql
+-- Step 1: Start transaction by deactivating the currently active but aging model
+START TRANSACTION;
+UPDATE MODEL_METADATA SET is_active = 0 WHERE model_id = 1;
+
+-- Step 2: Set a savepoint after clearing the active model slate
+SAVEPOINT old_deactivated;
+SELECT model_id, is_active FROM MODEL_METADATA WHERE model_id = 1;
+```
+**Output 1: Main Model Deactivated**
+| model_id | is_active |
+| :--- | :--- |
+| 1 | 0 |
+
+```sql
+-- Step 3: Attempt to activate a hastily trained experimental model
+UPDATE MODEL_METADATA SET is_active = 1 WHERE model_id = 99;
+SELECT model_id, is_active FROM MODEL_METADATA WHERE model_id IN (1, 99);
+```
+**Output 2: Experimental Model Active**
+| model_id | is_active |
+| :--- | :--- |
+| 1 | 0 |
+| 99 | 1 |
+
+```sql
+-- Step 4: Experimental model fails health check constraints, rollback activation
+ROLLBACK TO old_deactivated;
+SELECT model_id, is_active FROM MODEL_METADATA WHERE model_id = 99;
+```
+**Output 3: Experimental Activation Undone**
+| model_id | is_active |
+| :--- | :--- |
+| 99 | 0 |
+
+```sql
+-- Step 5: Proceed to activate the verified stable model version instead
+UPDATE MODEL_METADATA SET is_active = 1 WHERE model_id = 2;
+
+-- Step 6: Commit the safe model hot-swap
+COMMIT;
+```
+
+### 5.3.5 Transaction 5: Deleting Fraudulent Records
+
+```sql
+-- Step 1: Start transaction by clearing a disputed fraud label
+START TRANSACTION;
+DELETE FROM FRAUD_LABEL WHERE transaction_id = 412;
+
+-- Step 2: Set a savepoint after clearing the label
+SAVEPOINT label_cleared;
+SELECT * FROM FRAUD_LABEL WHERE transaction_id = 412;
+```
+**Output 1: Fraud Label Cleared**
+*(Empty Set - 0 rows returned)*
+
+```sql
+-- Step 3: Attempt to also delete the core transaction log
+DELETE FROM TRANSACTION WHERE transaction_id = 412;
+SELECT * FROM TRANSACTION WHERE transaction_id = 412;
+```
+**Output 2: Transaction Illegally Dropped**
+*(Empty Set - 0 rows returned)*
+
+```sql
+-- Step 4: Violation! Compliance requires keeping raw transaction logs for 5 years, rollback
+ROLLBACK TO label_cleared;
+SELECT transaction_id FROM TRANSACTION WHERE transaction_id = 412;
+```
+**Output 3: Transaction Safety Restored**
+| transaction_id |
+| :--- |
+| 412 |
+
+```sql
+-- Step 5: Instead of deleting, just update a cached customer fraud count to reflect the label removal
+UPDATE CUSTOMER SET total_fraud_count = total_fraud_count - 1 WHERE customer_id = (SELECT customer_id FROM TRANSACTION WHERE transaction_id = 412);
+
+-- Step 6: Commit the label deletion and count adjustment
+COMMIT;
+```
+
+## 5.4 Concurrency control
+Concurrency control mechanisms ensure data integrity when multiple analysts or API endpoints access the database simultaneously.
+
+### 5.4.1 Concurrency control Algorithms
+The system relies on algorithms like **Two-Phase Locking (2PL)** and **Timestamp Ordering** to guarantee serializability between reading predictions and inserting transactions.
+
+### 5.4.2 Locking commands
+**a. Row-Level Locking – SELECT ... FOR UPDATE / FOR SHARE**
+Row-level locks restrict access to explicitly targeted rows without halting the entire table.
+
+```sql
+-- Example: Shared Lock (READ Lock)
+-- Concept: Read a Model row safely. Other sessions CAN read, but NO ONE can update it.
+START TRANSACTION;
+    SELECT model_name, version FROM MODEL_METADATA WHERE model_id = 1 FOR SHARE;
+COMMIT;
+
+-- Example: Exclusive Lock (WRITE Lock)
+-- Concept: We are modifying a prediction. NO OTHER SESSION can read or modify this row.
+START TRANSACTION;
+    SELECT predicted_class FROM ML_PREDICTION WHERE transaction_id = 100 FOR UPDATE;
+    UPDATE ML_PREDICTION SET predicted_class = 1 WHERE transaction_id = 100;
+COMMIT;
+```
+
+**b. Table-Level Locking – LOCK TABLE**
+Table-level locks freeze an entire relationship. Useful for massive ML re-training batches or sweeping report generation.
+
+```sql
+-- Example: Table READ Lock
+-- Concept: Generating a report. Nobody can insert new customers until we unlock.
+LOCK TABLES CUSTOMER READ;
+
+    -- Output of someone else trying to insert while it's locked:
+    -- mysql> INSERT INTO CUSTOMER (risk_score) VALUES (0.80);
+    -- ERROR 1099 (HY000): Table 'CUSTOMER' was locked with a READ lock and can't be updated
+    
+    SELECT COUNT(*), SUM(total_fraud_count) FROM CUSTOMER;
+UNLOCK TABLES;
+
+-- Example: Table WRITE Lock
+-- Concept: Purging old data. NO ONE else can even read this table while we do it.
+LOCK TABLES TRANSACTION_ARCHIVE WRITE;
+    DELETE FROM TRANSACTION_ARCHIVE WHERE archived_at < '2020-01-01';
+UNLOCK TABLES;
+```
+
+**Lock Modes**
+| Lock Mode | Description |
+| :--- | :--- |
+| `ROW SHARE` | Allows concurrent access; prevents other sessions from locking the table exclusively. |
+| `ROW EXCLUSIVE` | Prevents other sessions from locking in share mode. Used automatically by UPDATE/INSERT. |
+| `SHARE` | Allows multiple queries to READ, but blocks all UPDATEs or DELETEs from anyone. |
+| `SHARE ROW EXCLUSIVE` | A mix; more restrictive than SHARE. |
+| `EXCLUSIVE` | Prevents all other access — full table lock (WRITE lock). |
+
+**c. COMMIT – Release All Locks**
+Ends the transaction and makes changes visible, releasing all row/table locks held by the session.
+
+**d. ROLLBACK – Undo Changes & Release Locks**
+Reverts the transaction modifications and similarly frees held locks so other queries can proceed.
+
+### 5.4.3 Example (Fraud Detection Project Implementation)
+In our Fraud Detection Database, we implement Concurrency Control to govern ML Model activation checks and dynamic risk score modifications.
+
+```sql
+-- Scenario: Analyst A is analyzing Transaction 1004. 
+-- They issue an Exclusive Row Lock so nobody can touch or predict on it while they verify.
+START TRANSACTION;
+
+    SELECT predicted_class, probability_score 
+    FROM ML_PREDICTION 
+    WHERE transaction_id = 1004 
+    FOR UPDATE; -- << EXCLUSIVE ROW LOCK IS APPLIED
+
+    -- If another terminal background task tries to issue an UPDATE on Transaction 1004 right now:
+    -- mysql> UPDATE ML_PREDICTION SET probability_score = 0.99 WHERE transaction_id = 1004;
+    -- Output: ERROR 1205 (HY000): Lock wait timeout exceeded; try restarting transaction
+    
+    UPDATE ML_PREDICTION 
+    SET probability_score = 0.99, predicted_class = 1 
+    WHERE transaction_id = 1004;
+
+COMMIT; 
+-- << EXCLUSIVE LOCK IS RELEASED
+```

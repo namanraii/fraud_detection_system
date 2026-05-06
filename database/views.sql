@@ -143,20 +143,21 @@ SELECT
     mp.prediction_id,
     mp.transaction_id,
     t.customer_id,
-    t.amount,
+    COALESCE(t.amount, mp.amount) AS amount,
     t.time,
     mm.model_name,
     mp.predicted_class,
     mp.probability_score,
     fl.is_fraud AS actual_class,
     CASE 
+        WHEN fl.is_fraud IS NULL THEN 'Manual/Pending'
         WHEN mp.predicted_class = fl.is_fraud THEN 'Correct'
         ELSE 'Incorrect'
     END AS prediction_result,
     mp.predicted_at
 FROM 
     ML_PREDICTION mp
-    JOIN TRANSACTION t ON mp.transaction_id = t.transaction_id
+    LEFT JOIN TRANSACTION t ON mp.transaction_id = t.transaction_id
     JOIN MODEL_METADATA mm ON mp.model_id = mm.model_id
     LEFT JOIN FRAUD_LABEL fl ON mp.transaction_id = fl.transaction_id
 ORDER BY 

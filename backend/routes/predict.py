@@ -106,7 +106,8 @@ def make_prediction():
                         data.get('transaction_id',None),
                         _model_id,
                         is_fraud,
-                        fraud_probability
+                        fraud_probability,
+                        data.get('amount')
                     )
             except Exception as e:
                 logger.warning(f"Failed to store prediction: {e}")

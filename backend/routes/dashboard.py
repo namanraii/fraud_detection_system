@@ -31,17 +31,20 @@ def get_dashboard():
         # Get overall statistics
         stats = get_database_stats()
         
-        # Get model performance metrics
+        # Get model performance metrics (precision/recall stored in metrics JSON)
         model_performance = execute_query("""
             SELECT 
                 model_name,
                 version,
                 training_samples as total_predictions,
-                ROUND(accuracy * 100, 2) as accuracy_pct,
-                ROUND(`precision` * 100, 2) as precision_pct,
-                ROUND(`recall` * 100, 2) as recall_pct
+                ROUND(JSON_EXTRACT(metrics, '$.roc_auc') * 100, 2)   as accuracy_pct,
+                ROUND(JSON_EXTRACT(metrics, '$.precision') * 100, 2) as precision_pct,
+                ROUND(JSON_EXTRACT(metrics, '$.recall') * 100, 2)    as recall_pct,
+                ROUND(JSON_EXTRACT(metrics, '$.f1_score') * 100, 2)  as f1_pct,
+                is_active
             FROM 
                 MODEL_METADATA
+            WHERE metrics IS NOT NULL
             ORDER BY 
                 trained_at DESC
             LIMIT 5

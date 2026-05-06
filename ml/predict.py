@@ -90,20 +90,17 @@ def preprocess_features(features_dict, scaler=None):
     for name in feature_names:
         key = name.upper() if name.startswith('V') else name
         value = features_dict.get(key, 0.0)
-        feature_values.append(value)
+        feature_values.append(float(value))
     
     # Convert to numpy array
     X = np.array(feature_values).reshape(1, -1)
     
     # Apply transformations
     # Log transform amount
-    #X[0, 1] = np.log1p(X[0, 1])
+    X[0, 1] = np.log1p(X[0, 1])
     
     # Normalize time (assuming max time from training)
-    #X[0, 0] = X[0, 0] / 172800.0  # Approximate max time from dataset
-    if scaler is not None:
-        X = scaler.transform(X)
-    # Apply scaler if provided
+    X[0, 0] = X[0, 0] / 172800.0  # Approximate max time from dataset
     if scaler is not None:
         X = scaler.transform(X)
     
@@ -122,16 +119,16 @@ def predict_fraud(model, scaler, features_dict):
     return bool(predicted_class), float(probability)
 
 
-def store_prediction(connection, transaction_id, model_id, predicted_class, probability_score):
+def store_prediction(connection, transaction_id, model_id, predicted_class, probability_score, amount=None):
     """Store prediction in database"""
     cursor = connection.cursor()
     
     try:
         cursor.execute("""
             INSERT INTO ML_PREDICTION 
-            (transaction_id, model_id, predicted_class, probability_score)
-            VALUES (%s, %s, %s, %s)
-        """, (transaction_id, model_id, predicted_class, probability_score))
+            (transaction_id, model_id, predicted_class, probability_score, amount)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (transaction_id, model_id, predicted_class, probability_score, amount))
         
         prediction_id = cursor.lastrowid
         connection.commit()
@@ -203,7 +200,7 @@ def batch_predict(connection, model, scaler, model_id, transaction_ids=None):
             predicted_class, probability = predict_fraud(model, scaler, txn)
             
             # Store prediction
-            if store_prediction(connection, transaction_id, model_id, predicted_class, probability):
+            if store_prediction(connection, transaction_id, model_id, predicted_class, probability, txn['amount']):
                 predictions_stored += 1
         
         logger.info(f"Stored {predictions_stored} predictions")

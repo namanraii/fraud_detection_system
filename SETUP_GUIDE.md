@@ -98,6 +98,9 @@ mysql -u root -p < database/indexes.sql
 # Create views
 mysql -u root -p < database/views.sql
 
+# Create advanced objects (Triggers, Functions, Procedures)
+mysql -u root -p < database/advanced_objects.sql
+
 # Verify database creation
 mysql -u root -p -e "USE fraud_db; SHOW TABLES;"
 ```

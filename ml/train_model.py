@@ -282,18 +282,14 @@ def store_model_metadata(connection, model_name, version, metrics, hyperparams, 
         # Insert model metadata
         cursor.execute("""
             INSERT INTO MODEL_METADATA
-            (model_name, version, metrics, hyperparameters, training_samples,
-            accuracy, `precision`, `recall`, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (model_name, version, metrics, hyperparameters, training_samples, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s)
          """, (
              model_name,
              version,
              metrics_json,
              hyperparams_json,
              training_samples,
-             metrics.get("accuracy", 0),
-             metrics.get("precision", 0),
-             metrics.get("recall", 0),
              False
          ))
         model_id = cursor.lastrowid
